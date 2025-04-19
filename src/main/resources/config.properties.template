@@ -1,0 +1,6 @@
+# Bot Configuration
+# Replace this with your actual Discord bot token
+bot.token=YOUR_BOT_TOKEN_HERE
+
+# Command prefix
+bot.prefix=!
