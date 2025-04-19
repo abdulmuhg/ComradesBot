@@ -1,5 +1,7 @@
-import java.util.Properties
+package config
+
 import org.slf4j.LoggerFactory
+import java.util.Properties
 
 /**
  * Loads configuration properties from a file.

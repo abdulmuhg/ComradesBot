@@ -1,7 +1,21 @@
+import commands.CommandManager
+import commands.SlashCommandManager
+import commands.slash.EchoSlashCommand
+import commands.slash.PingSlashCommand
+import commands.slash.ServerInfoSlashCommand
+import commands.slash.UserInfoSlashCommand
+import commands.traditional.EchoCommand
+import commands.traditional.HelpCommand
+import commands.traditional.PingCommand
+import config.ConfigLoader
+import event.EventHandler
+import features.poll.PollManager
+import features.poll.PollSlashCommand
 import kotlinx.coroutines.runBlocking
 import net.dv8tion.jda.api.JDABuilder
 import net.dv8tion.jda.api.OnlineStatus
 import net.dv8tion.jda.api.entities.Activity
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.events.session.ReadyEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
@@ -16,13 +30,19 @@ import org.slf4j.LoggerFactory
  * pass your bot token directly as a command-line argument:
  *
  * ./gradlew run --args="YOUR_BOT_TOKEN"
+ *
+ * You can also specify a specific guild ID to register slash commands to:
+ * ./gradlew run --args="YOUR_BOT_TOKEN YOUR_GUILD_ID"
  */
 fun main(args: Array<String> = emptyArray()) {
     // Check if a token was provided as a command-line argument
     val directToken = if (args.isNotEmpty()) args[0] else null
 
-    // Initialize the bot with optional direct token
-    DiscordBot.initialize(directToken)
+    // Check if a guild ID was provided for slash command registration
+    val guildId = if (args.size > 1) args[1] else null
+
+    // Initialize the bot with optional direct token and guild ID
+    DiscordBot.initialize(directToken, guildId)
 }
 
 /**
@@ -31,14 +51,16 @@ fun main(args: Array<String> = emptyArray()) {
 object DiscordBot : ListenerAdapter() {
     private val logger = LoggerFactory.getLogger(DiscordBot::class.java)
     private val commandManager = CommandManager()
+    private val slashCommandManager = SlashCommandManager()
     private val prefix by lazy { ConfigLoader.getCommandPrefix() }
 
     /**
      * Initialize the bot and connect to Discord.
      *
      * @param directToken Optional token to use instead of loading from config
+     * @param guildId Optional guild ID to register slash commands to
      */
-    fun initialize(directToken: String? = null) {
+    fun initialize(directToken: String? = null, guildId: String? = null) {
         logger.info("Starting bot initialization...")
 
         // Get the bot token either from the parameter or from config
@@ -62,26 +84,36 @@ object DiscordBot : ListenerAdapter() {
 
         // Register commands
         registerCommands()
+        registerSlashCommands()
 
         try {
+            // Create the event handler
+            val eventHandler = EventHandler()
+
             // Build the JDA instance
             logger.info("Building JDA instance...")
             val jda = JDABuilder.createDefault(token)
                 .enableIntents(
                     GatewayIntent.GUILD_MESSAGES,
                     GatewayIntent.GUILD_MEMBERS,
-                    GatewayIntent.MESSAGE_CONTENT
+                    GatewayIntent.MESSAGE_CONTENT,
+                    GatewayIntent.GUILD_PRESENCES  // Added for member status in ServerInfoCommand
                 )
                 .setMemberCachePolicy(MemberCachePolicy.ALL)
-                .setActivity(Activity.playing("Type $prefix help"))
+                .setActivity(Activity.playing("Type / for commands"))
                 .setStatus(OnlineStatus.ONLINE)
-                .addEventListeners(this)
+                .addEventListeners(this, eventHandler, PollManager)  // Added features.poll.PollManager as an event listener
                 .build()
 
             // Block until it's connected
             logger.info("Waiting for connection...")
             jda.awaitReady()
             logger.info("Bot has successfully connected to Discord!")
+
+            // Register slash commands with Discord
+            slashCommandManager.registerCommandsWithDiscord(jda, guildId)
+            logger.info("Slash commands ${if (guildId != null) "registered to guild $guildId" else "registered globally"}")
+
         } catch (e: Exception) {
             logger.error("Failed to initialize bot: ${e.message}", e)
             logger.error("Please check that your token is correct and that you have proper internet connectivity")
@@ -90,7 +122,7 @@ object DiscordBot : ListenerAdapter() {
     }
 
     /**
-     * Register all command handlers.
+     * Register all traditional command handlers.
      */
     private fun registerCommands() {
         // Register basic commands
@@ -99,7 +131,21 @@ object DiscordBot : ListenerAdapter() {
         // Add the help command last so it can see all other commands
         commandManager.registerCommand(HelpCommand(commandManager))
 
-        logger.info("Registered all commands")
+        logger.info("Registered all traditional commands")
+    }
+
+    /**
+     * Register all slash commands.
+     */
+    private fun registerSlashCommands() {
+        // Register slash commands
+        slashCommandManager.registerCommand(PingSlashCommand())
+        slashCommandManager.registerCommand(EchoSlashCommand())
+        slashCommandManager.registerCommand(UserInfoSlashCommand())
+        slashCommandManager.registerCommand(ServerInfoSlashCommand())  // Added ServerInfo command
+        slashCommandManager.registerCommand(PollSlashCommand())  // Added Poll command
+
+        logger.info("Registered all slash commands")
     }
 
     /**
@@ -110,12 +156,22 @@ object DiscordBot : ListenerAdapter() {
     }
 
     /**
-     * Handle incoming messages.
+     * Handle incoming messages for traditional commands.
      */
     override fun onMessageReceived(event: MessageReceivedEvent) {
         // Process commands using coroutines
         runBlocking {
             commandManager.handleMessage(prefix, event)
+        }
+    }
+
+    /**
+     * Handle slash command interactions.
+     */
+    override fun onSlashCommandInteraction(event: SlashCommandInteractionEvent) {
+        // Process slash commands using coroutines
+        runBlocking {
+            slashCommandManager.handleSlashCommand(event)
         }
     }
 }
