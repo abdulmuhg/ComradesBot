@@ -1,12 +1,16 @@
 # Discord Kotlin Bot
 
-A simple Discord bot built with Kotlin and JDA (Java Discord API).
+A modern Discord bot built with Kotlin and JDA (Java Discord API), featuring both traditional prefix commands and slash commands.
 
 ## Features
 
-- Command system with prefix customization
-- Basic commands: ping, help, echo
-- Easy to extend with new commands
+- Traditional command system with prefix customization
+- Modern slash commands with parameter validation
+- Event listeners for member join/leave events
+- Basic commands:
+  - Traditional: ping, help, echo
+  - Slash commands: /ping, /echo, /userinfo
+- Easy to extend with new commands and event listeners
 
 ## Setup
 
@@ -17,9 +21,39 @@ A simple Discord bot built with Kotlin and JDA (Java Discord API).
 5. Build the project using Gradle: `./gradlew build`
 6. Run the bot: `./gradlew run`
 
+### Important Discord Bot Settings
+
+When setting up your bot in the Discord Developer Portal:
+
+1. Go to the "Bot" tab
+2. Enable the following Privileged Gateway Intents:
+   - SERVER MEMBERS INTENT
+   - MESSAGE CONTENT INTENT
+   - PRESENCE INTENT
+3. Go to OAuth2 > URL Generator
+4. Select scopes:
+   - bot
+   - applications.commands
+5. Select appropriate bot permissions (at minimum: Send Messages, Read Message History, and Use Slash Commands)
+
+## Command Registration
+
+### Global vs. Guild Commands
+
+You can register slash commands in two ways:
+- **Global registration**: Commands available in all servers (may take up to an hour to update)
+- **Guild registration**: Commands available immediately but only in one server
+
+To register commands for a specific guild (for faster development):
+```
+./gradlew run --args="YOUR_BOT_TOKEN YOUR_GUILD_ID"
+```
+
 ## Adding New Commands
 
-To add a new command:
+### Traditional Commands
+
+To add a new traditional command:
 
 1. Create a new class that implements the `Command` interface
 2. Implement the required properties and methods
@@ -28,18 +62,4 @@ To add a new command:
 Example:
 
 ```kotlin
-class MyCommand : Command {
-    override val name = "mycommand"
-    override val description = "Description of my command"
-    override val usage = "mycommand [args]"
-    
-    override suspend fun execute(args: List<String>, event: MessageReceivedEvent) {
-        // Command implementation here
-        event.channel.sendMessage("My command was executed!").queue()
-    }
-}
-```
-
-## License
-
-MIT
+class MyCommand : Comman
