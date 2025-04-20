@@ -1,5 +1,10 @@
 package commands
 
+import error.BotException
+import error.CommandExecutionException
+import error.DiscordApiException
+import error.InvalidInputException
+import error.PermissionException
 import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent
 import org.slf4j.LoggerFactory
@@ -66,31 +71,48 @@ class SlashCommandManager {
     suspend fun handleSlashCommand(event: SlashCommandInteractionEvent) {
         val commandName = event.name
         val command = commands[commandName]
-        
+
         if (command != null) {
             logger.info("Executing slash command: $commandName, User: ${event.user.name}")
             try {
                 command.execute(event)
-            } catch (e: Exception) {
+            } catch (e: InvalidInputException) {
+                logger.info("Invalid input for slash command $commandName: ${e.message}")
+                sendErrorResponse(event, e.getUserFriendlyMessage())
+            } catch (e: PermissionException) {
+                logger.info("Permission denied for user ${event.user.id} on slash command $commandName: ${e.message}")
+                sendErrorResponse(event, e.getUserFriendlyMessage())
+            } catch (e: CommandExecutionException) {
                 logger.error("Error executing slash command $commandName", e)
-                
-                val response = if (event.isAcknowledged) {
-                    "An error occurred while executing the command: ${e.message}"
-                } else {
-                    "An error occurred while executing the command: ${e.message}"
-                }
-                
-                if (event.isAcknowledged) {
-                    event.hook.sendMessage(response).setEphemeral(true).queue()
-                } else {
-                    event.reply(response).setEphemeral(true).queue()
-                }
+                sendErrorResponse(event, e.getUserFriendlyMessage())
+            } catch (e: DiscordApiException) {
+                logger.error("Discord API error in slash command $commandName", e)
+                sendErrorResponse(event, e.getUserFriendlyMessage())
+            } catch (e: BotException) {
+                logger.error("Bot exception in slash command $commandName", e)
+                sendErrorResponse(event, e.getUserFriendlyMessage())
+            } catch (e: Exception) {
+                logger.error("Unexpected error executing slash command $commandName", e)
+                val exception = CommandExecutionException("An unexpected error occurred", e, commandName)
+                sendErrorResponse(event, exception.getUserFriendlyMessage())
             }
         } else {
             logger.warn("Received unknown slash command: $commandName")
             if (!event.isAcknowledged) {
                 event.reply("Unknown command: $commandName").setEphemeral(true).queue()
             }
+        }
+    }
+
+    /**
+     * Helper function to send error responses for slash commands.
+     * Handles the complexity of whether the interaction has already been acknowledged.
+     */
+    private fun sendErrorResponse(event: SlashCommandInteractionEvent, message: String) {
+        if (event.isAcknowledged) {
+            event.hook.sendMessage(message).setEphemeral(true).queue()
+        } else {
+            event.reply(message).setEphemeral(true).queue()
         }
     }
 }

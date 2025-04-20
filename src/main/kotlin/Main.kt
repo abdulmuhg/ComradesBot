@@ -12,6 +12,7 @@ import event.EventHandler
 import features.poll.PollManager
 import features.poll.PollSlashCommand
 import kotlinx.coroutines.runBlocking
+import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.JDABuilder
 import net.dv8tion.jda.api.OnlineStatus
 import net.dv8tion.jda.api.entities.Activity
@@ -35,14 +36,29 @@ import org.slf4j.LoggerFactory
  * ./gradlew run --args="YOUR_BOT_TOKEN YOUR_GUILD_ID"
  */
 fun main(args: Array<String> = emptyArray()) {
-    // Check if a token was provided as a command-line argument
-    val directToken = if (args.isNotEmpty()) args[0] else null
+    try {
+        // Check if a token was provided as a command-line argument
+        val directToken = if (args.isNotEmpty()) args[0] else null
 
-    // Check if a guild ID was provided for slash command registration
-    val guildId = if (args.size > 1) args[1] else null
+        // Check if a guild ID was provided for slash command registration
+        val guildId = if (args.size > 1) args[1] else null
 
-    // Initialize the bot with optional direct token and guild ID
-    DiscordBot.initialize(directToken, guildId)
+        // Initialize the bot synchronously - this will block until connected
+        DiscordBot.initialize(directToken, guildId)
+
+        // Add shutdown hook
+        Runtime.getRuntime().addShutdownHook(Thread {
+            DiscordBot.shutdown()
+        })
+
+        // Keep the application running
+        println("Bot is now running. Press Ctrl+C to exit.")
+        Thread.currentThread().join()
+    } catch (e: Exception) {
+        println("Failed to start bot: ${e.message}")
+        e.printStackTrace()
+        System.exit(1)
+    }
 }
 
 /**
@@ -53,6 +69,7 @@ object DiscordBot : ListenerAdapter() {
     private val commandManager = CommandManager()
     private val slashCommandManager = SlashCommandManager()
     private val prefix by lazy { ConfigLoader.getCommandPrefix() }
+    private var jda: JDA? = null
 
     /**
      * Initialize the bot and connect to Discord.
@@ -92,32 +109,56 @@ object DiscordBot : ListenerAdapter() {
 
             // Build the JDA instance
             logger.info("Building JDA instance...")
-            val jda = JDABuilder.createDefault(token)
+            val jdaBuilder = JDABuilder.createDefault(token)
                 .enableIntents(
                     GatewayIntent.GUILD_MESSAGES,
                     GatewayIntent.GUILD_MEMBERS,
                     GatewayIntent.MESSAGE_CONTENT,
-                    GatewayIntent.GUILD_PRESENCES  // Added for member status in ServerInfoCommand
+                    GatewayIntent.GUILD_PRESENCES
                 )
                 .setMemberCachePolicy(MemberCachePolicy.ALL)
                 .setActivity(Activity.playing("Type / for commands"))
                 .setStatus(OnlineStatus.ONLINE)
-                .addEventListeners(this, eventHandler, PollManager)  // Added features.poll.PollManager as an event listener
-                .build()
+                .addEventListeners(this, eventHandler, PollManager)
 
-            // Block until it's connected
+            // Create and store the JDA instance
+            jda = jdaBuilder.build()
+
+            // Wait for connection to complete - this blocks until connected
             logger.info("Waiting for connection...")
-            jda.awaitReady()
+            jda?.awaitReady()
+
             logger.info("Bot has successfully connected to Discord!")
 
             // Register slash commands with Discord
-            slashCommandManager.registerCommandsWithDiscord(jda, guildId)
+            slashCommandManager.registerCommandsWithDiscord(jda!!, guildId)
             logger.info("Slash commands ${if (guildId != null) "registered to guild $guildId" else "registered globally"}")
 
         } catch (e: Exception) {
             logger.error("Failed to initialize bot: ${e.message}", e)
             logger.error("Please check that your token is correct and that you have proper internet connectivity")
             throw e
+        }
+    }
+
+    /**
+     * Shut down the bot gracefully.
+     */
+    fun shutdown() {
+        logger.info("Shutting down bot...")
+
+        try {
+            // Shut down the JDA instance
+            jda?.shutdown()
+
+            // Shut down the poll manager's scheduler
+            PollManager.shutdown()
+
+            // Additional shutdown tasks can be added here
+
+            logger.info("Bot shutdown complete")
+        } catch (e: Exception) {
+            logger.error("Error during bot shutdown: ${e.message}", e)
         }
     }
 

@@ -1,5 +1,6 @@
 package config
 
+import error.ConfigurationException
 import org.slf4j.LoggerFactory
 import java.util.Properties
 
@@ -13,34 +14,41 @@ object ConfigLoader {
 
     init {
         try {
-            // Load properties from the config file
-            logger.info("Attempting to load config.properties")
+            logger.info("Loading configuration from config.properties")
             val inputStream = javaClass.classLoader.getResourceAsStream("config.properties")
-
-            if (inputStream == null) {
-                logger.error("Unable to find config.properties in resources. Make sure it exists in src/main/resources/")
-                throw IllegalStateException("Unable to find config.properties in resources")
-            }
+                ?: throw ConfigurationException("Unable to find config.properties in resources")
 
             properties.load(inputStream)
             inputStream.close()
 
-            // Debug: Print loaded properties (careful not to log the actual token)
-            logger.info("Config loaded successfully. Properties found: ${properties.stringPropertyNames().joinToString(", ")}")
+            // Validate required properties
+            validateRequiredProperties()
 
-            // Validate the token format
-            val token = properties.getProperty("bot.token")
-            if (token == null) {
-                logger.error("Bot token not found in config")
-            } else if (token == "YOUR_BOT_TOKEN_HERE") {
-                logger.error("Bot token is still set to the default placeholder. Please update with your actual token.")
-            } else {
-                logger.info("Bot token found (length: ${token.length})")
-            }
-
+            logger.info("Configuration loaded successfully")
+        } catch (e: ConfigurationException) {
+            logger.error("Configuration error: ${e.message}", e)
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to load configuration: ${e.message}", e)
-            throw RuntimeException("Failed to load configuration: ${e.message}", e)
+            throw ConfigurationException("Failed to load configuration: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Validates that all required properties are present in the config file.
+     */
+    private fun validateRequiredProperties() {
+        val requiredProperties = listOf("bot.token", "bot.prefix")
+
+        val missingProperties = requiredProperties.filter { !properties.containsKey(it) }
+        if (missingProperties.isNotEmpty()) {
+            throw ConfigurationException("Missing required properties: ${missingProperties.joinToString(", ")}")
+        }
+
+        // Check if token is the placeholder
+        val token = properties.getProperty("bot.token")
+        if (token == "YOUR_BOT_TOKEN_HERE") {
+            throw ConfigurationException("Bot token is still set to the default placeholder. Please update with your actual token.")
         }
     }
 
